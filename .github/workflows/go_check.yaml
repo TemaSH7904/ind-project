@@ -41,8 +41,10 @@ jobs:
       run: |
         echo "$YC_SA_JSON" > key.json
         yc config profile create sa-profile
+        # Указываем ключ. Этого достаточно для работы.
         yc config set service-account-key key.json
-        yc config set cloud-id $(yc config get cloud-id)
+        # Проверяем, что конфиг видит облако (опционально)
+        yc compute instance list
 
     # 4. Deploy
     - name: Deploy to Yandex

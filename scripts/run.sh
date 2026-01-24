@@ -4,7 +4,7 @@ set -e
 # --- КОНФИГУРАЦИЯ ---
 VM_NAME="project-sem-1-hard"
 ZONE="ru-central1-a"
-IMAGE_FAMILY="ubuntu-2204-lts"
+IMAGE_FAMILY="ubuntu-22-04-lts"
 
 # --- НАСТРОЙКА КЛЮЧЕЙ ---
 if [ -n "$CI" ]; then

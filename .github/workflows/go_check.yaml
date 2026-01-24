@@ -2,63 +2,56 @@ name: Super Hard CI/CD
 
 on:
   push:
-    branches: [ main, master ]
-  pull_request:
-    branches: [ main, master ]
+    branches: [ main ]
 
 jobs:
-  build-deploy-test:
+  # 1. Этап сборки и пуша образа
+  build:
     runs-on: ubuntu-latest
-    
     steps:
-    - name: Checkout code
-      uses: actions/checkout@v3
+      - uses: actions/checkout@v3
+      - name: Log in to Docker Hub
+        uses: docker/login-action@v2
+        with:
+          username: ${{ secrets.DOCKER_USERNAME }}
+          password: ${{ secrets.DOCKER_PASSWORD }}
+      - name: Build and Push
+        run: |
+          chmod +x scripts/prepare.sh
+          ./scripts/prepare.sh
 
-    # 1. Docker Hub
-    - name: Log in to Docker Hub
-      uses: docker/login-action@v2
-      with:
-        username: ${{ secrets.DOCKER_USERNAME }}
-        password: ${{ secrets.DOCKER_PASSWORD }}
+  # 2. Этап деплоя в облако (зависит от успешной сборки)
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - name: Install YC CLI
+        run: curl https://storage.yandexcloud.net/yandexcloud-yc/install.sh | bash
+      - name: Auth and Deploy
+        env:
+          YC_SA_JSON: ${{ secrets.YC_SA_JSON }}
+          YC_FOLDER_ID: ${{ secrets.YC_FOLDER_ID }}
+          SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
+          SSH_PUBLIC_KEY: ${{ secrets.SSH_PUBLIC_KEY }}
+          CI: true
+        run: |
+          echo "$YC_SA_JSON" > key.json
+          export PATH=$PATH:$HOME/yandex-cloud/bin
+          yc config profile create sa-profile
+          yc config set service-account-key key.json
+          yc config set folder-id $YC_FOLDER_ID
+          chmod +x scripts/run.sh
+          ./scripts/run.sh
 
-    - name: Build and Push
-      uses: docker/build-push-action@v4
-      with:
-        context: .
-        push: true
-        tags: docker7904/project-sem-1:latest
-
-    # 2. YC CLI
-    - name: Install YC CLI
-      run: |
-        curl https://storage.yandexcloud.net/yandexcloud-yc/install.sh | bash
-        echo "$HOME/yandex-cloud/bin" >> $GITHUB_PATH
-
-    # 3. Auth
-    - name: Auth in Yandex Cloud
-      env:
-        YC_SA_JSON: ${{ secrets.YC_SA_JSON }}
-        YC_FOLDER_ID: ${{ secrets.YC_FOLDER_ID }}
-      run: |
-        echo "$YC_SA_JSON" > key.json
-        yc config profile create sa-profile
-        yc config set service-account-key key.json
-        # Используем переменную из секретов
-        yc config set folder-id $YC_FOLDER_ID
-        yc compute instance list
-
-    # 4. Deploy
-    - name: Deploy to Yandex
-      env:
-        SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
-        SSH_PUBLIC_KEY: ${{ secrets.SSH_PUBLIC_KEY }}
-        CI: true
-      run: |
-        chmod +x scripts/*.sh
-        ./scripts/run.sh
-
-    # 5. Test
-    - name: Test Cloud
-      run: |
-        echo "Testing IP: ${{ env.DEPLOY_IP }}"
-        ./scripts/tests.sh 3 ${{ env.DEPLOY_IP }}
+  # 3. Этап тестирования (зависит от успешного деплоя)
+  test:
+    needs: deploy
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - name: Run Cloud Tests
+        run: |
+          chmod +x scripts/tests.sh
+          # Скрипт run.sh передает IP через окружение, либо используй статический
+          ./scripts/tests.sh 3 89.169.165.238:8080

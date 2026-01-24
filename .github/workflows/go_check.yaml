@@ -38,12 +38,13 @@ jobs:
     - name: Auth in Yandex Cloud
       env:
         YC_SA_JSON: ${{ secrets.YC_SA_JSON }}
+        YC_FOLDER_ID: ${{ secrets.YC_FOLDER_ID }}
       run: |
         echo "$YC_SA_JSON" > key.json
         yc config profile create sa-profile
-        # Указываем ключ. Этого достаточно для работы.
         yc config set service-account-key key.json
-        # Проверяем, что конфиг видит облако (опционально)
+        # Используем переменную из секретов
+        yc config set folder-id $YC_FOLDER_ID
         yc compute instance list
 
     # 4. Deploy

@@ -1,4 +1,4 @@
-name: Go Test Pipeline
+name: Hard Level CI
 
 on:
   push:
@@ -7,96 +7,53 @@ on:
     branches: [ main, master ]
 
 jobs:
-  test:
-    name: Run Tests
+  build-push-test:
     runs-on: ubuntu-latest
-
-    services:
-      postgres:
-        image: postgres:15
-        env:
-          POSTGRES_DB: project-sem-1
-          POSTGRES_USER: validator
-          POSTGRES_PASSWORD: val1dat0r
-        ports:
-          - 5432:5432
-        # Добавляем volume для сохранения данных
-        volumes:
-          - postgres_data:/var/lib/postgresql/data
-        options: >-
-          --health-cmd pg_isready
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
-
+    
     steps:
-    - uses: actions/checkout@v3
+    # 1. Скачиваем код репозитория
+    - name: Checkout code
+      uses: actions/checkout@v3
 
+    # 2. Логинимся в Docker Hub (чтобы запушить образ)
+    - name: Log in to Docker Hub
+      uses: docker/login-action@v2
+      with:
+        username: ${{ secrets.DOCKER_USERNAME }}
+        password: ${{ secrets.DOCKER_PASSWORD }}
+
+    # 3. Собираем и пушим образ в твой репозиторий
+    - name: Build and Push Docker image
+      uses: docker/build-push-action@v4
+      with:
+        context: .
+        push: true
+        tags: docker7904/project-sem-1:latest
+
+    # 4. Настраиваем Go (нужен для запуска тестов)
     - name: Set up Go
       uses: actions/setup-go@v4
       with:
         go-version: '1.23'
 
+    # 5. Делаем скрипты исполняемыми
     - name: Make scripts executable
-      run: |
-        chmod +x scripts/prepare.sh
-        chmod +x scripts/run.sh
-        chmod +x scripts/tests.sh
+      run: chmod +x scripts/*.sh
 
-    - name: Prepare environment
+    # 6. Проверяем работу скрипта prepare.sh (требование чек-листа)
+    - name: Check prepare.sh (Local Build)
       run: ./scripts/prepare.sh
 
-    - name: Run application
-      run: ./scripts/run.sh
-      env:
-        POSTGRES_HOST: localhost
-        POSTGRES_PORT: 5432
-        POSTGRES_DB: project-sem-1
-        POSTGRES_USER: validator
-        POSTGRES_PASSWORD: val1dat0r
-
-    - name: Test Level 1
-      id: test-level-1
-      continue-on-error: true
-      run: ./scripts/tests.sh 1
-      env:
-        POSTGRES_HOST: localhost
-        POSTGRES_PORT: 5432
-        POSTGRES_DB: project-sem-1
-        POSTGRES_USER: validator
-        POSTGRES_PASSWORD: val1dat0r
-
-    - name: Test Level 2
-      id: test-level-2
-      continue-on-error: true
-      run: ./scripts/tests.sh 2
-      env:
-        POSTGRES_HOST: localhost
-        POSTGRES_PORT: 5432
-        POSTGRES_DB: project-sem-1
-        POSTGRES_USER: validator
-        POSTGRES_PASSWORD: val1dat0r
-
-    - name: Test Level 3
-      id: test-level-3
-      continue-on-error: true
-      run: ./scripts/tests.sh 3
-      env:
-        POSTGRES_HOST: localhost
-        POSTGRES_PORT: 5432
-        POSTGRES_DB: project-sem-1
-        POSTGRES_USER: validator
-        POSTGRES_PASSWORD: val1dat0r
-
-    - name: Check test results
-      if: always()
+    # 7. Поднимаем локальное окружение для тестов
+    - name: Start Environment (Docker Compose)
       run: |
-        if [[ "${{ steps.test-level-1.outcome }}" == "success" ]] || \
-           [[ "${{ steps.test-level-2.outcome }}" == "success" ]] || \
-           [[ "${{ steps.test-level-3.outcome }}" == "success" ]]; then
-          echo "At least one test level passed successfully!"
-          exit 0
-        else
-          echo "All test levels failed!"
-          exit 1
-        fi
+        sudo docker compose up -d
+        sleep 10 # Ждем инициализацию базы
+
+    # 8. Устанавливаем утилиты для тестов
+    - name: Install Test Dependencies
+      run: sudo apt-get update && sudo apt-get install -y zip unzip postgresql-client
+
+    # 9. Запускаем тесты Сложного уровня
+    - name: Run Tests
+      run: ./scripts/tests.sh 3 localhost

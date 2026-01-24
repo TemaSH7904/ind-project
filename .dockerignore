@@ -1,0 +1,8 @@
+.git
+.github
+sample_data
+sample_data.zip
+scripts
+tests.sh
+docker-compose.yaml
+README.md

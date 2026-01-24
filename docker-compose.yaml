@@ -1,0 +1,38 @@
+version: '3.8'
+
+services:
+  app:
+    # Скачиваем готовый образ с твоего Docker Hub
+    image: docker7904/project-sem-1:latest
+    ports:
+      - "8080:8080"
+    environment:
+      - DB_HOST=db
+      - DB_PORT=5432
+      - DB_USER=validator
+      - DB_PASSWORD=val1dat0r
+      - DB_NAME=project-sem-1
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: always
+
+  db:
+    image: postgres:15-alpine
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_USER: validator
+      POSTGRES_PASSWORD: val1dat0r
+      POSTGRES_DB: project-sem-1
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./init.sql:/docker-entrypoint-initdb.d/init.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U validator -d project-sem-1"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  postgres_data:

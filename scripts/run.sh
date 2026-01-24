@@ -6,7 +6,7 @@ VM_NAME="project-sem-1-hard"
 # Используем зону 'b', так как твоя рабочая сеть находится именно там
 ZONE="ru-central1-b" 
 # Используем точный ID образа Ubuntu 22.04 LTS для стабильности
-IMAGE_ID="fd80bm0rh4km68uhh1fd"
+IMAGE_ID="fd8mmisarrj57od5613m"
 
 # --- НАСТРОЙКА КЛЮЧЕЙ ---
 if [ -n "$CI" ]; then

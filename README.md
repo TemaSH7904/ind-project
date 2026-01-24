@@ -29,3 +29,7 @@ REST API сервис для загрузки и выгрузки данных �
 ### 2. Локальное тестирование
 Успешный запуск контейнеров через `docker compose` и прохождение всех интеграционных тестов (Сложный уровень).
 ![Local Tests](screenshots/local_tests.png)
+
+### 3. CI/CD Pipeline (GitHub Actions)
+Автоматическая проверка каждого коммита: сборка Docker-образа, отправка в Docker Hub и запуск интеграционных тестов в облаке GitHub.
+![CI Success](screenshots/ci_success.png)

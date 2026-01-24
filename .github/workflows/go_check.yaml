@@ -1,4 +1,4 @@
-name: Hard Level CI
+name: Super Hard CI/CD
 
 on:
   push:
@@ -7,53 +7,55 @@ on:
     branches: [ main, master ]
 
 jobs:
-  build-push-test:
+  build-deploy-test:
     runs-on: ubuntu-latest
     
     steps:
-    # 1. Скачиваем код репозитория
     - name: Checkout code
       uses: actions/checkout@v3
 
-    # 2. Логинимся в Docker Hub (чтобы запушить образ)
+    # 1. Docker Hub
     - name: Log in to Docker Hub
       uses: docker/login-action@v2
       with:
         username: ${{ secrets.DOCKER_USERNAME }}
         password: ${{ secrets.DOCKER_PASSWORD }}
 
-    # 3. Собираем и пушим образ в твой репозиторий
-    - name: Build and Push Docker image
+    - name: Build and Push
       uses: docker/build-push-action@v4
       with:
         context: .
         push: true
         tags: docker7904/project-sem-1:latest
 
-    # 4. Настраиваем Go (нужен для запуска тестов)
-    - name: Set up Go
-      uses: actions/setup-go@v4
-      with:
-        go-version: '1.23'
-
-    # 5. Делаем скрипты исполняемыми
-    - name: Make scripts executable
-      run: chmod +x scripts/*.sh
-
-    # 6. Проверяем работу скрипта prepare.sh (требование чек-листа)
-    - name: Check prepare.sh (Local Build)
-      run: ./scripts/prepare.sh
-
-    # 7. Поднимаем локальное окружение для тестов
-    - name: Start Environment (Docker Compose)
+    # 2. YC CLI
+    - name: Install YC CLI
       run: |
-        sudo docker compose up -d
-        sleep 10 # Ждем инициализацию базы
+        curl https://storage.yandexcloud.net/yandexcloud-yc/install.sh | bash
+        echo "$HOME/yandex-cloud/bin" >> $GITHUB_PATH
 
-    # 8. Устанавливаем утилиты для тестов
-    - name: Install Test Dependencies
-      run: sudo apt-get update && sudo apt-get install -y zip unzip postgresql-client
+    # 3. Auth
+    - name: Auth in Yandex Cloud
+      env:
+        YC_SA_JSON: ${{ secrets.YC_SA_JSON }}
+      run: |
+        echo "$YC_SA_JSON" > key.json
+        yc config profile create sa-profile
+        yc config set service-account-key key.json
+        yc config set cloud-id $(yc config get cloud-id)
 
-    # 9. Запускаем тесты Сложного уровня
-    - name: Run Tests
-      run: ./scripts/tests.sh 3 localhost
+    # 4. Deploy
+    - name: Deploy to Yandex
+      env:
+        SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
+        SSH_PUBLIC_KEY: ${{ secrets.SSH_PUBLIC_KEY }}
+        CI: true
+      run: |
+        chmod +x scripts/*.sh
+        ./scripts/run.sh
+
+    # 5. Test
+    - name: Test Cloud
+      run: |
+        echo "Testing IP: ${{ env.DEPLOY_IP }}"
+        ./scripts/tests.sh 3 ${{ env.DEPLOY_IP }}

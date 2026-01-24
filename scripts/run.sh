@@ -1,74 +1,75 @@
 #!/bin/bash
 set -e
 
-# Configuration
-VM_NAME="project-sem-1-hard-$(date +%s)"
+# --- КОНФИГУРАЦИЯ ---
+VM_NAME="project-sem-1-hard"
 ZONE="ru-central1-a"
 IMAGE_FAMILY="ubuntu-2204-lts"
-SSH_KEY_PATH="$HOME/.ssh/deploy_key"
-SSH_PUB_KEY_PATH="$HOME/.ssh/deploy_key.pub"
 
-# Validate SSH keys
-if [ ! -f "$SSH_PUB_KEY_PATH" ]; then
-    echo "Error: SSH public key not found at $SSH_PUB_KEY_PATH"
-    exit 1
+# --- НАСТРОЙКА КЛЮЧЕЙ ---
+if [ -n "$CI" ]; then
+    # В GitHub Actions создаем файлы ключей из секретов
+    mkdir -p ~/.ssh
+    echo "$SSH_PRIVATE_KEY" > ~/.ssh/id_ed25519
+    chmod 600 ~/.ssh/id_ed25519
+    echo "$SSH_PUBLIC_KEY" > ~/.ssh/id_ed25519.pub
+    SSH_KEY_PATH="$HOME/.ssh/id_ed25519"
+    SSH_PUB_KEY_PATH="$HOME/.ssh/id_ed25519.pub"
+else
+    # Локально используем твои пути (проверь, что путь верный!)
+    SSH_KEY_PATH="$HOME/.ssh/deploy_key"
+    SSH_PUB_KEY_PATH="$HOME/.ssh/deploy_key.pub"
 fi
 
-echo "Creating Yandex Cloud VM: $VM_NAME..."
+echo "🔍 Checking infrastructure..."
 
-# Create VM instance
-INSTANCE_ID=$(yc compute instance create \
-  --name $VM_NAME \
-  --zone $ZONE \
-  --network-interface subnet-name=default-$ZONE,nat-ip-version=ipv4 \
-  --create-boot-disk image-family=$IMAGE_FAMILY,size=15 \
-  --ssh-key $SSH_PUB_KEY_PATH \
-  --format json | grep -oP '"id": "\K[^"]+')
+# --- ПРОВЕРКА МАШИНЫ ---
+if yc compute instance get --name "$VM_NAME" > /dev/null 2>&1; then
+    echo "✅ VM exists. Ensuring it is running..."
+    yc compute instance start --name "$VM_NAME" > /dev/null 2>&1 || true
+    INSTANCE_ID=$(yc compute instance get --name "$VM_NAME" --format json | grep -oP '"id": "\K[^"]+')
+else
+    echo "🚀 Creating NEW VM..."
+    INSTANCE_ID=$(yc compute instance create \
+      --name "$VM_NAME" \
+      --zone "$ZONE" \
+      --network-interface subnet-name=default-$ZONE,nat-ip-version=ipv4 \
+      --create-boot-disk image-family=$IMAGE_FAMILY,size=15 \
+      --ssh-key "$SSH_PUB_KEY_PATH" \
+      --format json | grep -oP '"id": "\K[^"]+')
+fi
 
-echo "VM Created. ID: $INSTANCE_ID"
-echo "Retrieving IP address..."
-sleep 5
-
-# Get Public IP
+# --- ПОЛУЧЕНИЕ IP ---
 IP=$(yc compute instance get --id $INSTANCE_ID --format json | grep -oP '"address": "\K[^"]+' | head -1)
+echo "🎯 IP: $IP"
 
-if [ -z "$IP" ]; then
-    echo "Error: Failed to get IP address"
-    exit 1
+if [ -n "$CI" ]; then
+    echo "DEPLOY_IP=$IP" >> $GITHUB_ENV
 fi
 
-echo "IP Address: $IP"
-echo "Waiting for SSH availability..."
-
-# Wait for SSH availability
-for i in {1..40}; do
-    if ssh -o StrictHostKeyChecking=no -o ConnectTimeout=5 -i $SSH_KEY_PATH yc-user@$IP "echo ready" &>/dev/null; then
-        echo "SSH is ready."
+# --- ОЖИДАНИЕ SSH ---
+echo "⏳ Waiting for SSH..."
+for i in {1..20}; do
+    if ssh -o StrictHostKeyChecking=no -o ConnectTimeout=5 -i "$SSH_KEY_PATH" yc-user@$IP "echo ready" &>/dev/null; then
+        echo "SSH ready."
         break
     fi
     sleep 5
 done
 
-# Transfer files (Configs only)
-echo "Uploading configuration files..."
-ssh -o StrictHostKeyChecking=no -i $SSH_KEY_PATH yc-user@$IP "mkdir -p ~/app"
-scp -o StrictHostKeyChecking=no -i $SSH_KEY_PATH \
-    docker-compose.yaml init.sql \
-    yc-user@$IP:~/app/
+# --- ДЕПЛОЙ ---
+echo "📂 Uploading configs..."
+ssh -o StrictHostKeyChecking=no -i "$SSH_KEY_PATH" yc-user@$IP "mkdir -p ~/app" || true
+scp -o StrictHostKeyChecking=no -i "$SSH_KEY_PATH" docker-compose.yaml init.sql yc-user@$IP:~/app/
 
-# Remote execution: Install Docker and Deploy
-echo "Installing Docker and deploying application..."
-ssh -o StrictHostKeyChecking=no -i $SSH_KEY_PATH yc-user@$IP <<EOF
-    # Docker installation
-    curl -fsSL https://get.docker.com -o get-docker.sh
-    sudo sh get-docker.sh > /dev/null 2>&1
-    
-    # Deployment
+echo "🐳 Deploying Docker..."
+ssh -o StrictHostKeyChecking=no -i "$SSH_KEY_PATH" yc-user@$IP <<EOF
+    if ! command -v docker &> /dev/null; then
+        curl -fsSL https://get.docker.com -o get-docker.sh
+        sudo sh get-docker.sh > /dev/null 2>&1
+    fi
     cd ~/app
-    echo "Pulling image from Docker Hub and starting..."
-    sudo docker compose up -d --pull always
+    sudo docker compose pull
+    sudo docker compose up -d --force-recreate
 EOF
-
-echo "Deployment successful."
-# Output IP for tests
-echo "$IP"
+echo "✅ Deployment Done!"

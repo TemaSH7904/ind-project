@@ -3,8 +3,10 @@ set -e
 
 # --- КОНФИГУРАЦИЯ ---
 VM_NAME="project-sem-1-hard"
-ZONE="ru-central1-a"
-IMAGE_FAMILY="ubuntu-22-04-lts"
+# Используем зону 'b', так как твоя рабочая сеть находится именно там
+ZONE="ru-central1-b" 
+# Используем точный ID образа Ubuntu 22.04 LTS для стабильности
+IMAGE_ID="fd80bm0rh4km68uhh1fd"
 
 # --- НАСТРОЙКА КЛЮЧЕЙ ---
 if [ -n "$CI" ]; then
@@ -16,12 +18,12 @@ if [ -n "$CI" ]; then
     SSH_KEY_PATH="$HOME/.ssh/id_ed25519"
     SSH_PUB_KEY_PATH="$HOME/.ssh/id_ed25519.pub"
 else
-    # Локально используем твои пути (проверь, что путь верный!)
+    # Локально используем твои стандартные пути
     SSH_KEY_PATH="$HOME/.ssh/deploy_key"
     SSH_PUB_KEY_PATH="$HOME/.ssh/deploy_key.pub"
 fi
 
-echo "🔍 Checking infrastructure..."
+echo "🔍 Checking infrastructure in zone $ZONE..."
 
 # --- ПРОВЕРКА МАШИНЫ ---
 if yc compute instance get --name "$VM_NAME" > /dev/null 2>&1; then
@@ -29,12 +31,12 @@ if yc compute instance get --name "$VM_NAME" > /dev/null 2>&1; then
     yc compute instance start --name "$VM_NAME" > /dev/null 2>&1 || true
     INSTANCE_ID=$(yc compute instance get --name "$VM_NAME" --format json | grep -oP '"id": "\K[^"]+')
 else
-    echo "🚀 Creating NEW VM..."
+    echo "🚀 Creating NEW VM in zone $ZONE..."
     INSTANCE_ID=$(yc compute instance create \
       --name "$VM_NAME" \
       --zone "$ZONE" \
       --network-interface subnet-name=default-$ZONE,nat-ip-version=ipv4 \
-      --create-boot-disk image-family=$IMAGE_FAMILY,size=15 \
+      --create-boot-disk image-id=$IMAGE_ID,size=15 \
       --ssh-key "$SSH_PUB_KEY_PATH" \
       --format json | grep -oP '"id": "\K[^"]+')
 fi

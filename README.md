@@ -41,8 +41,8 @@ REST API сервис для загрузки и выгрузки данных �
 К кому можно обращаться в случае вопросов?
 
 * **GitHub**: [@TemaSH7904](https://github.com/TemaSH7904)
-* **Mail**: [artem_shalaev00@mail.ru]
-* **Tlgrm**: [@temaSh01]
+* **Mail**: artem_shalaev00@mail.ru
+* **Tlgrm**: @temaSh01
 ## Демонстрация работы
 
 ### 1. Локальная сборка (Build)

@@ -5,32 +5,41 @@ on:
     branches: [ main ]
 
 jobs:
+  # Stage 1: Build and Push Docker Image
   build:
+    name: Build and Push
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v3
+      
       - name: Log in to Docker Hub
         uses: docker/login-action@v2
         with:
           username: ${{ secrets.DOCKER_USERNAME }}
           password: ${{ secrets.DOCKER_PASSWORD }}
-      - name: Build and Push
+          
+      - name: Execute Build Script
         run: |
           chmod +x scripts/prepare.sh
           ./scripts/prepare.sh
 
+  # Stage 2: Infrastructure Provisioning and Deployment
   deploy:
+    name: Deploy Infrastructure
     needs: build
     runs-on: ubuntu-latest
-    # Объявляем, что эта работа выдаст IP наружу
     outputs:
-      vm_ip: ${{ steps.get_ip.outputs.ip }}
+      SERVER_IP: ${{ steps.get_ip.outputs.ip }}
     steps:
       - uses: actions/checkout@v3
-      - name: Install YC CLI
-        run: curl https://storage.yandexcloud.net/yandexcloud-yc/install.sh | bash
-      - name: Auth and Deploy
-        id: get_ip # Даем ID шагу, чтобы забрать его вывод
+      
+      - name: Install Yandex Cloud CLI
+        run: |
+          curl https://storage.yandexcloud.net/yandexcloud-yc/install.sh | bash
+          echo "$HOME/yandex-cloud/bin" >> $GITHUB_PATH
+        
+      - name: Provision and Deploy
+        id: get_ip
         env:
           YC_SA_JSON: ${{ secrets.YC_SA_JSON }}
           YC_FOLDER_ID: ${{ secrets.YC_FOLDER_ID }}
@@ -38,29 +47,41 @@ jobs:
           SSH_PUBLIC_KEY: ${{ secrets.SSH_PUBLIC_KEY }}
           CI: true
         run: |
+          # Authentication
           echo "$YC_SA_JSON" > key.json
-          export PATH=$PATH:$HOME/yandex-cloud/bin
           yc config profile create sa-profile
           yc config set service-account-key key.json
           yc config set folder-id $YC_FOLDER_ID
+          
+          # Run Deployment Script
           chmod +x scripts/run.sh
           
-          # Запускаем скрипт и сохраняем его вывод
-          # Скрипт run.sh ДОЛЖЕН вывести строку типа: IP=89.169.x.x
-          RESULT=$(./scripts/run.sh)
-          echo "$RESULT"
+          # Capture output to extract IP
+          OUTPUT=$(./scripts/run.sh)
+          echo "$OUTPUT"
           
-          # Извлекаем IP из вывода и передаем в GitHub Actions Output
-          EXTRACTED_IP=$(echo "$RESULT" | grep -oE '[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}' | head -n 1)
-          echo "ip=$EXTRACTED_IP" >> $GITHUB_OUTPUT
+          # Extract IP using the defined token
+          DETECTED_IP=$(echo "$OUTPUT" | grep "DYNAMIC_IP_ADDRESS=" | cut -d'=' -f2)
+          
+          if [ -z "$DETECTED_IP" ]; then
+            echo "Error: Could not detect IP address from output"
+            exit 1
+          fi
+          
+          echo "Detected IP: $DETECTED_IP"
+          echo "ip=$DETECTED_IP" >> $GITHUB_OUTPUT
 
+  # Stage 3: Integration Testing
   test:
+    name: Integration Tests
     needs: deploy
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v3
-      - name: Run Cloud Tests
+      
+      - name: Run Tests
+        env:
+          TARGET_IP: ${{ needs.deploy.outputs.SERVER_IP }}
         run: |
           chmod +x scripts/tests.sh
-          # Используем IP, полученный из предыдущего Job
-          ./scripts/tests.sh 3 ${{ needs.deploy.outputs.vm_ip }}
+          ./scripts/tests.sh 3 $TARGET_IP

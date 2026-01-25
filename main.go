@@ -147,13 +147,12 @@ func processCSV(reader *csv.Reader) ImportResponse {
 			continue
 		}
 
-		// ИСПРАВЛЕННЫЙ ПАРСИНГ (под tests.sh)
 		// CSV: id, name, category, price, create_date
 		id, err1 := strconv.ParseInt(record[0], 10, 64)
 		// record[1] - name
 		// record[2] - category
-		price, err2 := strconv.ParseInt(record[3], 10, 64) // Цена теперь индекс 3
-		dateStr := record[4]                               // Дата теперь индекс 4
+		price, err2 := strconv.ParseInt(record[3], 10, 64)
+		dateStr := record[4]
 
 		_, err3 := time.Parse("2006-01-02", dateStr)
 
@@ -172,7 +171,6 @@ func processCSV(reader *csv.Reader) ImportResponse {
 }
 
 func insertPrice(id int64, date, name, category string, price int64) bool {
-	// Исправлено имя колонки на create_date
 	query := `INSERT INTO prices (id, name, category, price, create_date) 
               VALUES ($1, $2, $3, $4, $5) 
               ON CONFLICT (id) DO NOTHING`
@@ -191,7 +189,6 @@ func handleGet(w http.ResponseWriter, r *http.Request) {
 	minPrice := r.URL.Query().Get("min")
 	maxPrice := r.URL.Query().Get("max")
 
-	// Исправлено имя колонки в SELECT и WHERE
 	query := "SELECT id, name, category, price, to_char(create_date, 'YYYY-MM-DD') FROM prices WHERE 1=1"
 	args := []interface{}{}
 	argId := 1
@@ -229,14 +226,12 @@ func handleGet(w http.ResponseWriter, r *http.Request) {
 	csvFile, _ := zipWriter.Create("data.csv")
 	csvWriter := csv.NewWriter(csvFile)
 
-	// Заголовок CSV (под требования тестов)
 	csvWriter.Write([]string{"id", "name", "category", "price", "create_date"})
 
 	for rows.Next() {
 		var id int64
 		var date, name, category string
 		var price int64
-		// Сканируем в правильном порядке SELECT
 		if err := rows.Scan(&id, &name, &category, &price, &date); err == nil {
 			csvWriter.Write([]string{
 				fmt.Sprintf("%d", id),
